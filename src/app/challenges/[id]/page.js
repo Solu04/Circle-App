@@ -38,7 +38,28 @@ const ChallengePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isMember, setIsMember] = useState(false);
+  const [membershipLoading, setMembershipLoading] = useState(false); // NEW: Track membership loading
   const [userVotes, setUserVotes] = useState(new Set());
+
+  // NEW: More robust membership detection
+  const checkMembership = useCallback(async (userId, communityId) => {
+    if (!userId || !communityId) return false;
+
+    try {
+      setMembershipLoading(true);
+      console.log("Checking membership for:", { userId, communityId });
+
+      const memberStatus = await isUserMemberOfCommunity(userId, communityId);
+      console.log("Membership result:", memberStatus);
+
+      return !!memberStatus;
+    } catch (err) {
+      console.error("Error checking membership:", err);
+      return false;
+    } finally {
+      setMembershipLoading(false);
+    }
+  }, []);
 
   const loadChallenge = useCallback(async () => {
     if (!id) return;
@@ -50,13 +71,16 @@ const ChallengePage = () => {
       const challengeData = await getChallengeById(id);
       setChallenge(challengeData);
 
-      // Check if user is a member of the community
+      // IMPROVED: Better membership checking
       if (user && challengeData.community_id) {
-        const memberStatus = await isUserMemberOfCommunity(
+        const memberStatus = await checkMembership(
           user.id,
           challengeData.community_id
         );
-        setIsMember(!!memberStatus);
+        setIsMember(memberStatus);
+        console.log("User membership status:", memberStatus);
+      } else {
+        setIsMember(false);
       }
 
       // Load submissions
@@ -67,9 +91,13 @@ const ChallengePage = () => {
       if (user) {
         const votes = new Set();
         for (const submission of submissionsData) {
-          const voted = await hasUserVoted(user.id, submission.id);
-          if (voted) {
-            votes.add(submission.id);
+          try {
+            const voted = await hasUserVoted(user.id, submission.id);
+            if (voted) {
+              votes.add(submission.id);
+            }
+          } catch (err) {
+            console.error("Error checking vote status:", err);
           }
         }
         setUserVotes(votes);
@@ -80,14 +108,46 @@ const ChallengePage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, user]);
+  }, [id, user, checkMembership]); // Added checkMembership dependency
 
   useEffect(() => {
     loadChallenge();
   }, [loadChallenge]);
 
+  // NEW: Re-check membership when user or challenge changes
+  useEffect(() => {
+    if (user && challenge?.community_id) {
+      checkMembership(user.id, challenge.community_id).then(setIsMember);
+    } else {
+      setIsMember(false);
+    }
+  }, [user, challenge?.community_id, checkMembership]);
+
+  // IMPROVED: Better voting function with detailed logging
   const handleVote = async (submissionId) => {
-    if (!user || !isMember) return;
+    console.log("Vote attempt:", {
+      user: user?.id,
+      isMember,
+      membershipLoading,
+      submissionId,
+      challenge: challenge?.id,
+      communityId: challenge?.community_id,
+    });
+
+    if (!user) {
+      alert("Please sign in to vote on submissions");
+      return;
+    }
+
+    if (membershipLoading) {
+      alert("Checking membership status, please wait...");
+      return;
+    }
+
+    if (!isMember) {
+      alert("You must be a member of this community to vote on submissions");
+      return;
+    }
 
     try {
       const hasVoted = userVotes.has(submissionId);
@@ -99,9 +159,11 @@ const ChallengePage = () => {
           newSet.delete(submissionId);
           return newSet;
         });
+        console.log("Vote removed successfully");
       } else {
         await voteForSubmission(user.id, submissionId);
         setUserVotes((prev) => new Set([...prev, submissionId]));
+        console.log("Vote added successfully");
       }
 
       // Reload submissions to get updated vote counts
@@ -109,6 +171,7 @@ const ChallengePage = () => {
       setSubmissions(submissionsData);
     } catch (err) {
       console.error("Error voting:", err);
+      alert("Failed to vote. Please try again.");
     }
   };
 
@@ -138,6 +201,62 @@ const ChallengePage = () => {
       /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
     const match = url.match(regex);
     return match ? match[1] : null;
+  };
+
+  // NEW: Better vote button rendering with membership status
+  const renderVoteButton = (submission) => {
+    const hasUserVoted = userVotes.has(submission.id);
+
+    if (!user) {
+      return (
+        <button
+          disabled
+          className="flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-400 cursor-not-allowed"
+        >
+          <ThumbsUp size={14} />
+          {submission.vote_count || 0}
+        </button>
+      );
+    }
+
+    if (membershipLoading) {
+      return (
+        <button
+          disabled
+          className="flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600"
+        >
+          <ThumbsUp size={14} />
+          Checking...
+        </button>
+      );
+    }
+
+    if (!isMember) {
+      return (
+        <button
+          disabled
+          className="flex items-center gap-1 px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-400 cursor-not-allowed"
+          title="Join community to vote"
+        >
+          <ThumbsUp size={14} />
+          {submission.vote_count || 0}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        onClick={() => handleVote(submission.id)}
+        className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+          hasUserVoted
+            ? "bg-blue-100 text-blue-700"
+            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+        }`}
+      >
+        <ThumbsUp size={14} />
+        {submission.vote_count || 0}
+      </button>
+    );
   };
 
   if (loading) {
@@ -277,7 +396,6 @@ const ChallengePage = () => {
                   submission.submission_type === "video"
                     ? getYouTubeVideoId(submission.content_url)
                     : null;
-                const hasUserVoted = userVotes.has(submission.id);
 
                 return (
                   <Card key={submission.id} className="overflow-hidden">
@@ -318,19 +436,8 @@ const ChallengePage = () => {
                           {submission.user?.username}
                         </div>
 
-                        {user && isMember && (
-                          <button
-                            onClick={() => handleVote(submission.id)}
-                            className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
-                              hasUserVoted
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                            }`}
-                          >
-                            <ThumbsUp size={14} />
-                            {submission.vote_count || 0}
-                          </button>
-                        )}
+                        {/* UPDATED: Use the new renderVoteButton function */}
+                        {renderVoteButton(submission)}
                       </div>
 
                       <div className="mt-3 pt-3 border-t border-gray-100">
