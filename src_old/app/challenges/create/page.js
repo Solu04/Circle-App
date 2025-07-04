@@ -1,162 +1,159 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Calendar, Target, Users, ArrowLeft } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
-import { getUserCommunities, createChallenge } from "@/lib/database";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/Card";
-import Button from "@/components/Button";
-import Input from "@/components/Input";
-import Loading from "@/components/Loading";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Calendar, Target, Users, ArrowLeft } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
+import { getUserCommunities, createChallenge } from '@/lib/database'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/Card'
+import Button from '@/components/Button'
+import Input from '@/components/Input'
+import Loading from '@/components/Loading'
+import ProtectedRoute from '@/components/ProtectedRoute'
 
 function CreateChallengeContent() {
-  const { user, profile } = useAuth();
-  const router = useRouter();
-  const [userCommunities, setUserCommunities] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const { user, profile } = useAuth()
+  const router = useRouter()
+  const [userCommunities, setUserCommunities] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    community_id: "",
-    start_date: "",
-    end_date: "",
-  });
-  const [errors, setErrors] = useState({});
+    title: '',
+    description: '',
+    community_id: '',
+    start_date: '',
+    end_date: ''
+  })
+  const [errors, setErrors] = useState({})
 
   useEffect(() => {
     if (user) {
-      loadUserCommunities();
+      loadUserCommunities()
     }
-  }, [user]);
+  }, [user])
 
   const loadUserCommunities = async () => {
     try {
-      setLoading(true);
-      const communities = await getUserCommunities(user.id);
-
+      setLoading(true)
+      const communities = await getUserCommunities(user.id)
+      
       // Filter communities where user is a leader
-      // const leaderCommunities = communities.filter(community =>
-      //   community.leader_id === user.id
-      // )
-      const leaderCommunities = communities.filter(
-        (membership) => membership.community.leader_id === user.id
-      );
-
-      setUserCommunities(leaderCommunities);
-
+      const leaderCommunities = communities.filter(community => 
+        community.leader_id === user.id
+      )
+      
+      setUserCommunities(leaderCommunities)
+      
       // Auto-select if only one community
       if (leaderCommunities.length === 1) {
-        setFormData((prev) => ({
+        setFormData(prev => ({
           ...prev,
-          community_id: leaderCommunities[0].id,
-        }));
+          community_id: leaderCommunities[0].id
+        }))
       }
     } catch (error) {
-      console.error("Error loading communities:", error);
+      console.error('Error loading communities:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
+    const { name, value } = e.target
+    setFormData(prev => ({
       ...prev,
-      [name]: value,
-    }));
-
+      [name]: value
+    }))
+    
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors((prev) => ({
+      setErrors(prev => ({
         ...prev,
-        [name]: "",
-      }));
+        [name]: ''
+      }))
     }
-  };
+  }
 
   const validateForm = () => {
-    const newErrors = {};
+    const newErrors = {}
 
     if (!formData.title.trim()) {
-      newErrors.title = "Title is required";
+      newErrors.title = 'Title is required'
     } else if (formData.title.length < 5) {
-      newErrors.title = "Title must be at least 5 characters";
+      newErrors.title = 'Title must be at least 5 characters'
     }
 
     if (!formData.description.trim()) {
-      newErrors.description = "Description is required";
+      newErrors.description = 'Description is required'
     } else if (formData.description.length < 20) {
-      newErrors.description = "Description must be at least 20 characters";
+      newErrors.description = 'Description must be at least 20 characters'
     }
 
     if (!formData.community_id) {
-      newErrors.community_id = "Please select a community";
+      newErrors.community_id = 'Please select a community'
     }
 
     if (!formData.start_date) {
-      newErrors.start_date = "Start date is required";
+      newErrors.start_date = 'Start date is required'
     }
 
     if (!formData.end_date) {
-      newErrors.end_date = "End date is required";
+      newErrors.end_date = 'End date is required'
     }
 
     if (formData.start_date && formData.end_date) {
-      const startDate = new Date(formData.start_date);
-      const endDate = new Date(formData.end_date);
-      const now = new Date();
+      const startDate = new Date(formData.start_date)
+      const endDate = new Date(formData.end_date)
+      const now = new Date()
 
       if (startDate < now) {
-        newErrors.start_date = "Start date cannot be in the past";
+        newErrors.start_date = 'Start date cannot be in the past'
       }
 
       if (endDate <= startDate) {
-        newErrors.end_date = "End date must be after start date";
+        newErrors.end_date = 'End date must be after start date'
       }
 
-      const diffDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+      const diffDays = (endDate - startDate) / (1000 * 60 * 60 * 24)
       if (diffDays < 1) {
-        newErrors.end_date = "Challenge must run for at least 1 day";
+        newErrors.end_date = 'Challenge must run for at least 1 day'
       }
       if (diffDays > 30) {
-        newErrors.end_date = "Challenge cannot run for more than 30 days";
+        newErrors.end_date = 'Challenge cannot run for more than 30 days'
       }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e.preventDefault()
+    
+    if (!validateForm()) return
 
-    if (!validateForm()) return;
-
-    setSubmitting(true);
-
+    setSubmitting(true)
+    
     try {
       const challengeData = {
         ...formData,
         created_by: user.id,
-        status: "active",
+        status: 'active',
         start_date: new Date(formData.start_date).toISOString(),
-        end_date: new Date(formData.end_date).toISOString(),
-      };
+        end_date: new Date(formData.end_date).toISOString()
+      }
 
-      const newChallenge = await createChallenge(challengeData);
-
+      const newChallenge = await createChallenge(challengeData)
+      
       // Redirect to the new challenge
-      router.push(`/challenges/${newChallenge.id}`);
+      router.push(`/challenges/${newChallenge.id}`)
     } catch (error) {
-      console.error("Error creating challenge:", error);
-      setErrors({ submit: "Failed to create challenge. Please try again." });
+      console.error('Error creating challenge:', error)
+      setErrors({ submit: 'Failed to create challenge. Please try again.' })
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -165,7 +162,7 @@ function CreateChallengeContent() {
           <Loading size="lg" />
         </div>
       </div>
-    );
+    )
   }
 
   if (userCommunities.length === 0) {
@@ -177,15 +174,15 @@ function CreateChallengeContent() {
             No Communities to Manage
           </h1>
           <p className="text-gray-600 mb-6">
-            You need to be a community leader to create challenges. Join
-            communities or create your own to get started.
+            You need to be a community leader to create challenges. 
+            Join communities or create your own to get started.
           </p>
-          <Button onClick={() => router.push("/communities")}>
+          <Button onClick={() => router.push('/communities')}>
             Browse Communities
           </Button>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -202,12 +199,9 @@ function CreateChallengeContent() {
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          Create New Challenge
-        </h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">Create New Challenge</h1>
         <p className="text-gray-600">
-          Create an engaging challenge for your community members to participate
-          in.
+          Create an engaging challenge for your community members to participate in.
         </p>
       </div>
 
@@ -234,19 +228,14 @@ function CreateChallengeContent() {
                 disabled={submitting}
               >
                 <option value="">Select a community</option>
-                {userCommunities.map((membership) => (
-                  <option
-                    key={membership.community.id}
-                    value={membership.community.id}
-                  >
-                    {membership.community.name}
+                {userCommunities.map((community) => (
+                  <option key={community.id} value={community.id}>
+                    {community.name}
                   </option>
                 ))}
               </select>
               {errors.community_id && (
-                <p className="text-sm text-red-600 mt-1">
-                  {errors.community_id}
-                </p>
+                <p className="text-sm text-red-600 mt-1">{errors.community_id}</p>
               )}
             </div>
 
@@ -277,9 +266,7 @@ function CreateChallengeContent() {
                 disabled={submitting}
               />
               {errors.description && (
-                <p className="text-sm text-red-600 mt-1">
-                  {errors.description}
-                </p>
+                <p className="text-sm text-red-600 mt-1">{errors.description}</p>
               )}
             </div>
 
@@ -339,7 +326,7 @@ function CreateChallengeContent() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }
 
 export default function CreateChallengePage() {
@@ -347,5 +334,6 @@ export default function CreateChallengePage() {
     <ProtectedRoute>
       <CreateChallengeContent />
     </ProtectedRoute>
-  );
+  )
 }
+

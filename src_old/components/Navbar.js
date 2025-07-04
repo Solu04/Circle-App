@@ -3,19 +3,18 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  User,
-  LogOut,
-  Settings,
-  Trophy,
+import { 
+  User, 
+  LogOut, 
+  Settings, 
+  Trophy, 
   Bell,
   Menu,
   X,
   Home,
   Users,
   Target,
-  Plus,
-  Building2
+  Plus
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import AuthModal from '@/features/auth/AuthModal'
@@ -76,17 +75,6 @@ const Navbar = () => {
                   </Link>
                 ))}
                 
-                {/* Create Community Link for authenticated users */}
-                {user && (
-                  <Link
-                    href="/communities/create"
-                    className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
-                  >
-                    <Building2 size={18} />
-                    Create Community
-                  </Link>
-                )}
-
                 {/* Create Challenge Link for authenticated users */}
                 {user && (
                   <Link
@@ -156,15 +144,6 @@ const Navbar = () => {
                           Profile
                         </Link>
                         
-                        <Link
-                          href="/communities/create"
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 md:hidden"
-                          onClick={() => setShowUserMenu(false)}
-                        >
-                          <Building2 size={16} className="mr-2" />
-                          Create Community
-                        </Link>
-
                         <Link
                           href="/challenges/create"
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 md:hidden"
@@ -237,17 +216,6 @@ const Navbar = () => {
                 </Link>
               ))}
               
-              {user && (
-                <Link
-                  href="/communities/create"
-                  className="text-gray-700 hover:text-blue-600 block px-3 py-2 rounded-md text-base font-medium flex items-center gap-2"
-                  onClick={() => setShowMobileMenu(false)}
-                >
-                  <Building2 size={18} />
-                  Create Community
-                </Link>
-              )}
-
               {user && (
                 <Link
                   href="/challenges/create"

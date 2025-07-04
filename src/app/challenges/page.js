@@ -1,90 +1,121 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { Search, Filter, Target, Users } from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
-import { getActiveChallenges, getUserCommunities } from '@/lib/database'
-import ChallengeCard from '@/features/challenges/ChallengeCard'
-import Input from '@/components/Input'
-import Button from '@/components/Button'
-import Loading from '@/components/Loading'
+import { useState, useEffect, useCallback } from "react";
+import { Search, Target, Calendar, Users, Trophy, Plus } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import {
+  getActiveChallenges,
+  getUserCommunities,
+  getChallengesByUser,
+} from "@/lib/database";
+import ChallengeCard from "@/features/challenges/ChallengeCard";
+import Button from "@/components/Button";
+import Input from "@/components/Input";
+import Loading from "@/components/Loading";
+import Link from "next/link";
 
 export default function ChallengesPage() {
-  const { user } = useAuth()
-  const [challenges, setChallenges] = useState([])
-  const [userCommunities, setUserCommunities] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterMyCommunities, setFilterMyCommunities] = useState(false)
+  const { user } = useAuth();
+  const [challenges, setChallenges] = useState([]);
+  const [userCommunities, setUserCommunities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const loadChallenges = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Load all active challenges
+      const activeChallenges = await getActiveChallenges();
+      setChallenges(activeChallenges || []);
+
+      // Load user's communities if authenticated
+      if (user) {
+        try {
+          const userComms = await getUserCommunities(user.id);
+          setUserCommunities(userComms || []);
+        } catch (userCommError) {
+          console.error("Error loading user communities:", userCommError);
+          setUserCommunities([]);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading challenges:", err);
+      setError("Failed to load challenges. Please try again.");
+      setChallenges([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
-    loadChallenges()
-  }, [user])
+    loadChallenges();
+  }, [loadChallenges]);
 
-  const loadChallenges = async () => {
-    try {
-      setLoading(true)
-      
-      // Load all active challenges
-      const allChallenges = await getActiveChallenges()
-      setChallenges(allChallenges)
-      
-      // Load user's communities if logged in
-      if (user) {
-        const memberships = await getUserCommunities(user.id)
-        setUserCommunities(memberships)
-      }
-    } catch (error) {
-      console.error('Error loading challenges:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const filteredChallenges = challenges.filter(
+    (challenge) =>
+      challenge.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      challenge.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      challenge.community?.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  // Filter challenges based on search and filter options
-  const filteredChallenges = challenges.filter(challenge => {
-    const matchesSearch = challenge.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         challenge.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         challenge.community?.name.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesFilter = !filterMyCommunities || 
-                         userCommunities.some(community => community.id === challenge.community_id)
-    
-    return matchesSearch && matchesFilter
-  })
-
-  // Check if user is member of challenge's community
-  const isUserMemberOfCommunity = (communityId) => {
-    return userCommunities.some(community => community.id === communityId)
-  }
+  // Filter challenges based on user's community membership
+  const userCommunityIds = userCommunities.map((uc) => uc.community_id);
+  const relevantChallenges = user
+    ? filteredChallenges.filter((challenge) =>
+        userCommunityIds.includes(challenge.community_id)
+      )
+    : [];
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-center min-h-64">
-          <Loading size="lg" />
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Loading />
         </div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Active Challenges</h1>
-        <p className="text-gray-600 max-w-2xl">
-          Discover exciting challenges from communities you've joined. Submit your livestreams 
-          or videos to showcase your skills and compete with other creators.
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Active Challenges
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Discover exciting challenges from communities you've joined.
+                Submit your livestreams or videos to showcase your skills and
+                compete with other creators.
+              </p>
+            </div>
 
-      {/* Search and Filters */}
-      <div className="mb-8 flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            {user && userCommunities.length > 0 && (
+              <Link href="/challenges/create">
+                <Button className="flex items-center gap-2">
+                  <Plus size={16} />
+                  Create Challenge
+                </Button>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="mb-8">
+          <div className="relative max-w-md">
+            <Search
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              size={20}
+            />
             <Input
+              type="text"
               placeholder="Search challenges..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -92,103 +123,134 @@ export default function ChallengesPage() {
             />
           </div>
         </div>
-        
-        {user && userCommunities.length > 0 && (
-          <Button
-            variant={filterMyCommunities ? 'primary' : 'outline'}
-            onClick={() => setFilterMyCommunities(!filterMyCommunities)}
-            className="flex items-center gap-2"
-          >
-            <Filter size={16} />
-            {filterMyCommunities ? 'Show All' : 'My Communities'}
-          </Button>
-        )}
-      </div>
 
-      {/* Stats */}
-      <div className="mb-6 flex items-center gap-6 text-sm text-gray-600">
-        <div className="flex items-center gap-1">
-          <Target size={16} />
-          <span>{filteredChallenges.length} active challenges</span>
+        {/* Stats */}
+        <div className="mb-8">
+          <div className="flex items-center gap-6 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <Target size={16} />
+              <span>{challenges.length} active challenges</span>
+            </div>
+            {user && (
+              <div className="flex items-center gap-2">
+                <Trophy size={16} />
+                <span>{relevantChallenges.length} available to you</span>
+              </div>
+            )}
+          </div>
         </div>
-        
-        {user && userCommunities.length > 0 && (
-          <div className="flex items-center gap-1">
-            <Users size={16} />
-            <span>
-              {filteredChallenges.filter(c => isUserMemberOfCommunity(c.community_id)).length} 
-              {' '}from your communities
-            </span>
+
+        {/* Error state */}
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-600">{error}</p>
+            <Button variant="outline" onClick={loadChallenges} className="mt-2">
+              Try Again
+            </Button>
+          </div>
+        )}
+
+        {/* No user state */}
+        {!user && (
+          <div className="text-center py-12">
+            <Target size={48} className="mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Sign in to see challenges
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Join communities and participate in exciting weekly challenges.
+            </p>
+            <div className="flex gap-4 justify-center">
+              <Button variant="outline">Sign In</Button>
+              <Button>Sign Up</Button>
+            </div>
+          </div>
+        )}
+
+        {/* No communities state */}
+        {user && userCommunities.length === 0 && (
+          <div className="text-center py-12">
+            <Users size={48} className="mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Join communities first
+            </h3>
+            <p className="text-gray-600 mb-6">
+              You need to join communities to see and participate in their
+              challenges.
+            </p>
+            <Link href="/communities">
+              <Button>
+                <Users size={16} className="mr-2" />
+                Join Communities
+              </Button>
+            </Link>
+          </div>
+        )}
+
+        {/* No challenges state */}
+        {user &&
+          userCommunities.length > 0 &&
+          relevantChallenges.length === 0 &&
+          !searchTerm && (
+            <div className="text-center py-12">
+              <Target size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No active challenges
+              </h3>
+              <p className="text-gray-600 mb-6">
+                There are no active challenges at the moment.
+              </p>
+              <Link href="/challenges/create">
+                <Button>
+                  <Plus size={16} className="mr-2" />
+                  Create Challenge
+                </Button>
+              </Link>
+            </div>
+          )}
+
+        {/* Search no results */}
+        {user && searchTerm && filteredChallenges.length === 0 && (
+          <div className="text-center py-12">
+            <Search size={48} className="mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              No challenges found
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Try adjusting your search terms or browse all challenges.
+            </p>
+            <Button variant="outline" onClick={() => setSearchTerm("")}>
+              Clear Search
+            </Button>
+          </div>
+        )}
+
+        {/* Challenges grid */}
+        {user && relevantChallenges.length > 0 && (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {relevantChallenges.map((challenge) => (
+              <ChallengeCard
+                key={challenge.id}
+                challenge={challenge}
+                showSubmitButton={true}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* All challenges for non-members */}
+        {!user && filteredChallenges.length > 0 && (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {filteredChallenges.map((challenge) => (
+              <ChallengeCard
+                key={challenge.id}
+                challenge={challenge}
+                showSubmitButton={false}
+              />
+            ))}
           </div>
         )}
       </div>
-
-      {/* Challenges Grid */}
-      {filteredChallenges.length > 0 ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredChallenges.map((challenge) => (
-            <ChallengeCard
-              key={challenge.id}
-              challenge={challenge}
-              showCommunity={true}
-              userIsMember={isUserMemberOfCommunity(challenge.community_id)}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {searchTerm || filterMyCommunities ? 'No challenges found' : 'No active challenges'}
-          </h3>
-          <p className="text-gray-600 mb-6">
-            {searchTerm 
-              ? 'Try adjusting your search terms or filters.'
-              : filterMyCommunities
-              ? 'Your communities don\'t have any active challenges right now.'
-              : 'There are no active challenges at the moment.'
-            }
-          </p>
-          
-          {filterMyCommunities && (
-            <Button
-              variant="outline"
-              onClick={() => setFilterMyCommunities(false)}
-              className="mr-4"
-            >
-              Browse All Challenges
-            </Button>
-          )}
-          
-          {!user && (
-            <Button onClick={() => window.location.href = '/communities'}>
-              Join Communities
-            </Button>
-          )}
-          
-          {user && userCommunities.length === 0 && (
-            <Button onClick={() => window.location.href = '/communities'}>
-              Join Communities
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Call to Action for Non-Members */}
-      {user && filteredChallenges.length > 0 && (
-        <div className="mt-12 bg-blue-50 rounded-lg p-6 text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Want to participate in more challenges?
-          </h3>
-          <p className="text-gray-600 mb-4">
-            Join more communities to unlock additional weekly challenges and expand your creative horizons.
-          </p>
-          <Button onClick={() => window.location.href = '/communities'}>
-            Browse Communities
-          </Button>
-        </div>
-      )}
     </div>
-  )
+  );
 }
-

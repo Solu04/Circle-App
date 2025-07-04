@@ -22,54 +22,57 @@ export default function CommunityPage() {
   const { user } = useAuth()
   const [community, setCommunity] = useState(null)
   const [challenges, setChallenges] = useState([])
-  const [isMember, setIsMember] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [membershipLoading, setMembershipLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [isMember, setIsMember] = useState(false)
+  const [joining, setJoining] = useState(false)
 
   useEffect(() => {
-    if (params.id) {
-      loadCommunityData()
-    }
-  }, [params.id, user])
-
-  const loadCommunityData = async () => {
-    try {
-      setLoading(true)
+    const loadCommunity = async () => {
+      if (!params.id) return
       
-      // Load community details
-      const communityData = await getCommunityById(params.id)
-      setCommunity(communityData)
-      
-      // Load active challenges for this community
-      const challengesData = await getCommunityActiveChallenges(params.id)
-      setChallenges(challengesData)
-      
-      // Check if user is a member
-      if (user) {
-        const membershipStatus = await isUserMemberOfCommunity(user.id, params.id)
-        setIsMember(!!membershipStatus)
+      try {
+        setLoading(true)
+        setError(null)
+        
+        // Load community data
+        const communityData = await getCommunityById(params.id)
+        setCommunity(communityData)
+        
+        // Load active challenges
+        const challengesData = await getCommunityActiveChallenges(params.id)
+        setChallenges(challengesData)
+        
+        // Check membership status
+        if (user) {
+          const memberStatus = await isUserMemberOfCommunity(user.id, params.id)
+          setIsMember(!!memberStatus)
+        }
+        
+      } catch (err) {
+        console.error('Error loading community:', err)
+        setError('Failed to load community')
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.error('Error loading community data:', error)
-      // Handle 404 or other errors
-      router.push('/communities')
-    } finally {
-      setLoading(false)
     }
-  }
+
+    loadCommunity()
+  }, [params.id, user])
 
   const handleJoinLeave = async () => {
     if (!user) return
-
-    setMembershipLoading(true)
+    
     try {
+      setJoining(true)
+      
       if (isMember) {
         await leaveCommunity(user.id, params.id)
         setIsMember(false)
         // Update member count
         setCommunity(prev => ({
           ...prev,
-          member_count: Math.max((prev.member_count || 0) - 1, 0)
+          member_count: prev.member_count - 1
         }))
       } else {
         await joinCommunity(user.id, params.id)
@@ -77,175 +80,169 @@ export default function CommunityPage() {
         // Update member count
         setCommunity(prev => ({
           ...prev,
-          member_count: (prev.member_count || 0) + 1
+          member_count: prev.member_count + 1
         }))
       }
-    } catch (error) {
-      console.error('Error updating membership:', error)
+    } catch (err) {
+      console.error('Error joining/leaving community:', err)
     } finally {
-      setMembershipLoading(false)
+      setJoining(false)
     }
   }
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-center min-h-64">
-          <Loading size="lg" />
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Loading />
         </div>
       </div>
     )
   }
 
-  if (!community) {
+  if (error || !community) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Community Not Found</h1>
-          <Button onClick={() => router.push('/communities')}>
-            Back to Communities
-          </Button>
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Community Not Found</h2>
+            <p className="text-gray-600 mb-6">{error || 'The community you\'re looking for doesn\'t exist.'}</p>
+            <Button onClick={() => router.push('/communities')}>
+              <ArrowLeft size={16} className="mr-2" />
+              Back to Communities
+            </Button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Back Button */}
-      <Button
-        variant="ghost"
-        onClick={() => router.back()}
-        className="mb-6 flex items-center gap-2"
-      >
-        <ArrowLeft size={16} />
-        Back
-      </Button>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Back button */}
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/communities')}
+          className="mb-6"
+        >
+          <ArrowLeft size={16} className="mr-2" />
+          Back to Communities
+        </Button>
 
-      {/* Community Header */}
-      <div className="mb-8">
-        {community.image_url && (
-          <div className="w-full h-48 md:h-64 rounded-lg overflow-hidden mb-6">
-            <img
-              src={community.image_url}
-              alt={community.name}
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
-
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-4">
-              <h1 className="text-3xl font-bold text-gray-900">{community.name}</h1>
-              {isMember && (
-                <CheckCircle className="w-6 h-6 text-green-600" />
+        {/* Community header */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+            <div className="flex items-start gap-4">
+              {community.image_url && (
+                <img
+                  src={community.image_url}
+                  alt={community.name}
+                  className="w-20 h-20 rounded-lg object-cover"
+                />
               )}
-            </div>
-            
-            <p className="text-gray-600 text-lg mb-4">{community.description}</p>
-            
-            {/* Community Stats */}
-            <div className="flex items-center gap-6 text-sm text-gray-600">
-              <div className="flex items-center gap-1">
-                <Users size={16} />
-                <span>{community.member_count || 0} members</span>
-              </div>
-              
-              {community.leader && (
-                <div className="flex items-center gap-1">
-                  <Crown size={16} />
-                  <span>Led by {community.leader.username}</span>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{community.name}</h1>
+                <p className="text-gray-600 text-lg mb-4">{community.description}</p>
+                
+                <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600">
+                  <div className="flex items-center">
+                    <Users size={16} className="mr-2" />
+                    {community.member_count} members
+                  </div>
+                  <div className="flex items-center">
+                    <Crown size={16} className="mr-2" />
+                    Led by {community.leader?.username || 'Unknown'}
+                  </div>
+                  <div className="flex items-center">
+                    <Calendar size={16} className="mr-2" />
+                    Created {formatDate(community.created_at)}
+                  </div>
                 </div>
-              )}
-              
-              <div className="flex items-center gap-1">
-                <Target size={16} />
-                <span>{challenges.length} active challenges</span>
               </div>
             </div>
+            
+            {user && (
+              <div className="lg:flex-shrink-0">
+                <Button
+                  onClick={handleJoinLeave}
+                  disabled={joining}
+                  variant={isMember ? 'outline' : 'default'}
+                  size="lg"
+                  className="w-full lg:w-auto"
+                >
+                  {joining ? (
+                    'Processing...'
+                  ) : isMember ? (
+                    <>
+                      <CheckCircle size={16} className="mr-2" />
+                      Leave Community
+                    </>
+                  ) : (
+                    'Join Community'
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Join/Leave Button */}
-          {user && (
-            <Button
-              onClick={handleJoinLeave}
-              variant={isMember ? 'outline' : 'primary'}
-              size="lg"
-              loading={membershipLoading}
-              disabled={membershipLoading}
-              className="md:min-w-[150px]"
-            >
-              {isMember ? 'Leave Community' : 'Join Community'}
-            </Button>
-          )}
+        {/* Active challenges */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+            Active Challenges ({challenges.length})
+          </h2>
           
-          {!user && (
-            <Button variant="outline" size="lg" disabled>
-              Sign in to join
-            </Button>
+          {challenges.length === 0 ? (
+            <Card className="text-center py-12">
+              <Target size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No active challenges</h3>
+              <p className="text-gray-600 mb-6">This community doesn't have any active challenges at the moment.</p>
+              {user && community.leader_id === user.id && (
+                <Button onClick={() => router.push('/challenges/create')}>
+                  Create Challenge
+                </Button>
+              )}
+            </Card>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {challenges.map((challenge) => (
+                <Card 
+                  key={challenge.id} 
+                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => router.push(`/challenges/${challenge.id}`)}
+                >
+                  <CardHeader>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                        Active
+                      </span>
+                      <span className="text-sm text-gray-500">
+                        {formatRelativeTime(challenge.end_date)}
+                      </span>
+                    </div>
+                    <CardTitle className="text-lg">{challenge.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">
+                      {challenge.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <div className="flex items-center">
+                        <Calendar size={14} className="mr-1" />
+                        Ends {formatDate(challenge.end_date)}
+                      </div>
+                      <div className="flex items-center">
+                        <Target size={14} className="mr-1" />
+                        {challenge.submission_count || 0} submissions
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Active Challenges */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Active Challenges</h2>
-        
-        {challenges.length > 0 ? (
-          <div className="grid md:grid-cols-2 gap-6">
-            {challenges.map((challenge) => (
-              <Card key={challenge.id} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg mb-2">{challenge.title}</CardTitle>
-                      <CardDescription>{challenge.description}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* Challenge Timeline */}
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Calendar size={16} />
-                        <span>Ends {formatRelativeTime(challenge.end_date)}</span>
-                      </div>
-                      <span>{challenge.submission_count || 0} submissions</span>
-                    </div>
-
-                    {/* Action Button */}
-                    {isMember ? (
-                      <Button 
-                        className="w-full"
-                        onClick={() => router.push(`/challenges/${challenge.id}`)}
-                      >
-                        View Challenge
-                      </Button>
-                    ) : (
-                      <Button variant="outline" className="w-full" disabled>
-                        Join community to participate
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No Active Challenges
-            </h3>
-            <p className="text-gray-600">
-              This community doesn't have any active challenges at the moment. 
-              Check back later for new challenges!
-            </p>
-          </div>
-        )}
       </div>
     </div>
   )

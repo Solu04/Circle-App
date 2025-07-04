@@ -1,380 +1,362 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { 
-  Calendar, 
-  Users, 
-  Target, 
-  Clock, 
-  Trophy, 
-  ArrowLeft, 
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  Calendar,
+  Users,
+  Target,
+  Clock,
+  Trophy,
+  ArrowLeft,
   Play,
   ThumbsUp,
   Eye,
-  Plus
-} from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
-import { 
-  getChallengeById, 
+  Plus,
+} from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import {
+  getChallengeById,
   getChallengeSubmissions,
   isUserMemberOfCommunity,
-  hasUserVoted,
   voteForSubmission,
-  removeVote
-} from '@/lib/database'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/Card'
-import Button from '@/components/Button'
-import Loading from '@/components/Loading'
-import { formatDate, formatRelativeTime } from '@/lib/utils'
+  removeVote,
+  hasUserVoted,
+} from "@/lib/database";
+import Button from "@/components/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/Card";
+import Loading from "@/components/Loading";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
-export default function ChallengePage() {
-  const params = useParams()
-  const router = useRouter()
-  const { user } = useAuth()
-  const [challenge, setChallenge] = useState(null)
-  const [submissions, setSubmissions] = useState([])
-  const [userVotes, setUserVotes] = useState(new Set())
-  const [isMember, setIsMember] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [votingLoading, setVotingLoading] = useState(new Set())
+const ChallengePage = () => {
+  const { id } = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
 
-  useEffect(() => {
-    if (params.id) {
-      loadChallengeData()
-    }
-  }, [params.id, user])
+  const [challenge, setChallenge] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isMember, setIsMember] = useState(false);
+  const [userVotes, setUserVotes] = useState(new Set());
 
-  const loadChallengeData = async () => {
+  const loadChallenge = useCallback(async () => {
+    if (!id) return;
+
     try {
-      setLoading(true)
-      
-      // Load challenge details
-      const challengeData = await getChallengeById(params.id)
-      setChallenge(challengeData)
-      
-      // Load submissions for this challenge
-      const submissionsData = await getChallengeSubmissions(params.id)
-      setSubmissions(submissionsData)
-      
+      setLoading(true);
+      setError(null);
+
+      const challengeData = await getChallengeById(id);
+      setChallenge(challengeData);
+
       // Check if user is a member of the community
-      if (user && challengeData) {
-        const membershipStatus = await isUserMemberOfCommunity(user.id, challengeData.community_id)
-        setIsMember(!!membershipStatus)
-        
-        // Load user's votes for these submissions
-        const votes = new Set()
+      if (user && challengeData.community_id) {
+        const memberStatus = await isUserMemberOfCommunity(
+          user.id,
+          challengeData.community_id
+        );
+        setIsMember(!!memberStatus);
+      }
+
+      // Load submissions
+      const submissionsData = await getChallengeSubmissions(id);
+      setSubmissions(submissionsData);
+
+      // Load user votes if authenticated
+      if (user) {
+        const votes = new Set();
         for (const submission of submissionsData) {
-          const hasVoted = await hasUserVoted(user.id, submission.id)
-          if (hasVoted) {
-            votes.add(submission.id)
+          const voted = await hasUserVoted(user.id, submission.id);
+          if (voted) {
+            votes.add(submission.id);
           }
         }
-        setUserVotes(votes)
+        setUserVotes(votes);
       }
-    } catch (error) {
-      console.error('Error loading challenge data:', error)
-      router.push('/challenges')
+    } catch (err) {
+      console.error("Error loading challenge:", err);
+      setError("Failed to load challenge");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  }, [id, user]);
+
+  useEffect(() => {
+    loadChallenge();
+  }, [loadChallenge]);
 
   const handleVote = async (submissionId) => {
-    if (!user || !isMember) return
+    if (!user || !isMember) return;
 
-    setVotingLoading(prev => new Set(prev).add(submissionId))
-    
     try {
-      const hasVoted = userVotes.has(submissionId)
-      
-      if (hasVoted) {
-        await removeVote(user.id, submissionId)
-        setUserVotes(prev => {
-          const newVotes = new Set(prev)
-          newVotes.delete(submissionId)
-          return newVotes
-        })
-        // Update submission vote count
-        setSubmissions(prev => 
-          prev.map(sub => 
-            sub.id === submissionId 
-              ? { ...sub, vote_count: Math.max((sub.vote_count || 0) - 1, 0) }
-              : sub
-          )
-        )
-      } else {
-        await voteForSubmission(user.id, submissionId)
-        setUserVotes(prev => new Set(prev).add(submissionId))
-        // Update submission vote count
-        setSubmissions(prev => 
-          prev.map(sub => 
-            sub.id === submissionId 
-              ? { ...sub, vote_count: (sub.vote_count || 0) + 1 }
-              : sub
-          )
-        )
-      }
-    } catch (error) {
-      console.error('Error voting:', error)
-    } finally {
-      setVotingLoading(prev => {
-        const newLoading = new Set(prev)
-        newLoading.delete(submissionId)
-        return newLoading
-      })
-    }
-  }
+      const hasVoted = userVotes.has(submissionId);
 
-  const getVideoEmbedUrl = (url) => {
-    // Convert YouTube URLs to embed format
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      const videoId = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/)?.[1]
-      if (videoId) {
-        return `https://www.youtube.com/embed/${videoId}`
+      if (hasVoted) {
+        await removeVote(user.id, submissionId);
+        setUserVotes((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(submissionId);
+          return newSet;
+        });
+      } else {
+        await voteForSubmission(user.id, submissionId);
+        setUserVotes((prev) => new Set([...prev, submissionId]));
       }
+
+      // Reload submissions to get updated vote counts
+      const submissionsData = await getChallengeSubmissions(id);
+      setSubmissions(submissionsData);
+    } catch (err) {
+      console.error("Error voting:", err);
     }
-    
-    // For other URLs, return as is (might be direct video links)
-    return url
-  }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "active":
+        return "text-green-600 bg-green-100";
+      case "expired":
+        return "text-red-600 bg-red-100";
+      case "upcoming":
+        return "text-blue-600 bg-blue-100";
+      default:
+        return "text-gray-600 bg-gray-100";
+    }
+  };
+
+  const getDaysLeft = (endDate) => {
+    const end = new Date(endDate);
+    const now = new Date();
+    const diffTime = end - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getYouTubeVideoId = (url) => {
+    const regex =
+      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+  };
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-center min-h-64">
-          <Loading size="lg" />
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Loading />
         </div>
       </div>
-    )
+    );
   }
 
-  if (!challenge) {
+  if (error || !challenge) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Challenge Not Found</h1>
-          <Button onClick={() => router.push('/challenges')}>
-            Back to Challenges
-          </Button>
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Challenge Not Found
+            </h2>
+            <p className="text-gray-600 mb-6">
+              {error || "The challenge you're looking for doesn't exist."}
+            </p>
+            <Button onClick={() => router.push("/challenges")}>
+              <ArrowLeft size={16} className="mr-2" />
+              Back to Challenges
+            </Button>
+          </div>
         </div>
       </div>
-    )
+    );
   }
 
-  const isActive = challenge.status === 'active'
-  const isExpired = new Date(challenge.end_date) < new Date()
-  const daysLeft = Math.ceil((new Date(challenge.end_date) - new Date()) / (1000 * 60 * 60 * 24))
+  const daysLeft = getDaysLeft(challenge.end_date);
+  const isActive = challenge.status === "active";
+  const canSubmit = user && isMember && isActive && daysLeft > 0;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Back Button */}
-      <Button
-        variant="ghost"
-        onClick={() => router.back()}
-        className="mb-6 flex items-center gap-2"
-      >
-        <ArrowLeft size={16} />
-        Back
-      </Button>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Back button */}
+        <Button
+          variant="ghost"
+          onClick={() => router.push("/challenges")}
+          className="mb-6"
+        >
+          <ArrowLeft size={16} className="mr-2" />
+          Back to Challenges
+        </Button>
 
-      {/* Challenge Header */}
-      <div className="mb-8">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-4">
-              <h1 className="text-3xl font-bold text-gray-900">{challenge.title}</h1>
-              {isActive && !isExpired && (
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                  Active
+        {/* Challenge header */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-4">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                    challenge.status
+                  )}`}
+                >
+                  {challenge.status.charAt(0).toUpperCase() +
+                    challenge.status.slice(1)}
                 </span>
-              )}
-              {isExpired && (
-                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
-                  Expired
-                </span>
-              )}
+                {isActive && (
+                  <span className="flex items-center text-sm text-gray-600">
+                    <Clock size={16} className="mr-1" />
+                    {daysLeft > 0 ? `${daysLeft} days left` : "Ends today"}
+                  </span>
+                )}
+              </div>
+
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">
+                {challenge.title}
+              </h1>
+              <p className="text-gray-600 text-lg mb-6">
+                {challenge.description}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <Users size={16} className="mr-2" />
+                  {challenge.community?.name}
+                </div>
+                <div className="flex items-center">
+                  <Calendar size={16} className="mr-2" />
+                  {new Date(challenge.start_date).toLocaleDateString()} -{" "}
+                  {new Date(challenge.end_date).toLocaleDateString()}
+                </div>
+                <div className="flex items-center">
+                  <Target size={16} className="mr-2" />
+                  {submissions.length} submissions
+                </div>
+              </div>
             </div>
-            
-            <p className="text-gray-600 text-lg mb-6">{challenge.description}</p>
-            
-            {/* Challenge Info */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-gray-600">
-              <div className="flex items-center gap-2">
-                <Users size={16} />
-                <span>{challenge.community?.name}</span>
+
+            {canSubmit && (
+              <div className="lg:flex-shrink-0">
+                <Button
+                  onClick={() => router.push(`/challenges/${id}/submit`)}
+                  size="lg"
+                  className="w-full lg:w-auto"
+                >
+                  <Plus size={16} className="mr-2" />
+                  Submit Entry
+                </Button>
               </div>
-              
-              <div className="flex items-center gap-2">
-                <Calendar size={16} />
-                <span>Started {formatRelativeTime(challenge.start_date)}</span>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Clock size={16} />
-                <span>
-                  {isExpired ? 'Ended' : 'Ends'} {formatDate(challenge.end_date)}
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Target size={16} />
-                <span>{submissions.length} submissions</span>
-              </div>
-            </div>
+            )}
           </div>
+        </div>
 
-          {/* Submit Button */}
-          {user && isMember && isActive && !isExpired && (
-            <Button
-              size="lg"
-              onClick={() => router.push(`/challenges/${challenge.id}/submit`)}
-              className="flex items-center gap-2"
-            >
-              <Plus size={16} />
-              Submit Entry
-            </Button>
-          )}
-          
-          {!user && (
-            <Button variant="outline" size="lg" disabled>
-              Sign in to participate
-            </Button>
-          )}
-          
-          {user && !isMember && (
-            <Button variant="outline" size="lg" disabled>
-              Join community to participate
-            </Button>
+        {/* Submissions */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+            Submissions ({submissions.length})
+          </h2>
+
+          {submissions.length === 0 ? (
+            <Card className="text-center py-12">
+              <Target size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No submissions yet
+              </h3>
+              <p className="text-gray-600 mb-6">
+                Be the first to submit your entry for this challenge!
+              </p>
+              {canSubmit && (
+                <Button onClick={() => router.push(`/challenges/${id}/submit`)}>
+                  <Plus size={16} className="mr-2" />
+                  Submit Entry
+                </Button>
+              )}
+            </Card>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {submissions.map((submission) => {
+                const videoId =
+                  submission.submission_type === "video"
+                    ? getYouTubeVideoId(submission.content_url)
+                    : null;
+                const hasUserVoted = userVotes.has(submission.id);
+
+                return (
+                  <Card key={submission.id} className="overflow-hidden">
+                    {/* Video/Stream preview */}
+                    <div className="aspect-video bg-gray-100 relative">
+                      {videoId ? (
+                        <iframe
+                          src={`https://www.youtube.com/embed/${videoId}`}
+                          title={submission.title}
+                          className="w-full h-full"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Play size={48} className="text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Submission info */}
+                    <div className="p-4">
+                      <h3 className="font-semibold text-gray-900 mb-2">
+                        {submission.title}
+                      </h3>
+                      {submission.description && (
+                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                          {submission.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center mr-2">
+                            <span className="text-xs text-white font-medium">
+                              {submission.user?.username?.[0]?.toUpperCase()}
+                            </span>
+                          </div>
+                          {submission.user?.username}
+                        </div>
+
+                        {user && isMember && (
+                          <button
+                            onClick={() => handleVote(submission.id)}
+                            className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-colors ${
+                              hasUserVoted
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            }`}
+                          >
+                            <ThumbsUp size={14} />
+                            {submission.vote_count || 0}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <a
+                          href={submission.content_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-700 text-sm flex items-center"
+                        >
+                          <Eye size={14} className="mr-1" />
+                          View{" "}
+                          {submission.submission_type === "livestream"
+                            ? "Stream"
+                            : "Video"}
+                        </a>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
-
-      {/* Submissions */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          Submissions ({submissions.length})
-        </h2>
-        
-        {submissions.length > 0 ? (
-          <div className="space-y-6">
-            {submissions.map((submission) => (
-              <Card key={submission.id} className="overflow-hidden">
-                <div className="md:flex">
-                  {/* Video/Content Preview */}
-                  <div className="md:w-1/3">
-                    {submission.submission_type === 'video' && submission.content_url && (
-                      <div className="aspect-video">
-                        <iframe
-                          src={getVideoEmbedUrl(submission.content_url)}
-                          className="w-full h-full"
-                          allowFullScreen
-                          title={submission.title}
-                        />
-                      </div>
-                    )}
-                    
-                    {submission.submission_type === 'livestream' && (
-                      <div className="aspect-video bg-gray-100 flex items-center justify-center">
-                        <div className="text-center">
-                          <Play className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                          <p className="text-gray-600 text-sm">Livestream</p>
-                          <a
-                            href={submission.content_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 text-sm"
-                          >
-                            Watch Live
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Submission Details */}
-                  <div className="md:w-2/3 p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                          {submission.title}
-                        </h3>
-                        
-                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                          <div className="flex items-center gap-1">
-                            <Users size={14} />
-                            <span>{submission.user?.username}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar size={14} />
-                            <span>{formatRelativeTime(submission.created_at)}</span>
-                          </div>
-                        </div>
-                        
-                        {submission.description && (
-                          <p className="text-gray-700 mb-4">{submission.description}</p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Voting and Stats */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <Eye size={14} />
-                          <span>{submission.view_count || 0} views</span>
-                        </div>
-                      </div>
-                      
-                      {user && isMember && (
-                        <Button
-                          variant={userVotes.has(submission.id) ? 'primary' : 'outline'}
-                          size="sm"
-                          onClick={() => handleVote(submission.id)}
-                          loading={votingLoading.has(submission.id)}
-                          disabled={votingLoading.has(submission.id)}
-                          className="flex items-center gap-2"
-                        >
-                          <ThumbsUp size={14} />
-                          <span>{submission.vote_count || 0}</span>
-                        </Button>
-                      )}
-                      
-                      {(!user || !isMember) && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <ThumbsUp size={14} />
-                          <span>{submission.vote_count || 0}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No Submissions Yet
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Be the first to submit your entry for this challenge!
-            </p>
-            
-            {user && isMember && isActive && !isExpired && (
-              <Button
-                onClick={() => router.push(`/challenges/${challenge.id}/submit`)}
-                className="flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Submit Entry
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
     </div>
-  )
-}
+  );
+};
 
+export default ChallengePage;

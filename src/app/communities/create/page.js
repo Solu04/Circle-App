@@ -79,8 +79,14 @@ export default function CreateCommunity() {
         image_url: formData.image_url.trim() || null,
         leader_id: user.id,
         is_active: true,
-        member_count: 1, // Creator automatically becomes first member
+        // member_count: 1, // Creator automatically becomes first member
       };
+
+      // Add this line right before: const result = await createCommunity(communityData);
+      console.log(
+        "Form data being sent:",
+        JSON.stringify(communityData, null, 2)
+      );
 
       const result = await createCommunity(communityData);
 
